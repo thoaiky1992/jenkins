@@ -1,0 +1,18 @@
+services:
+  # Jenkins
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: jenkins
+    ports:
+      - "8080:8080"
+    networks:
+      - app-network
+    volumes:
+      - ./jenkins_home:/var/jenkins_home
+    environment:
+      TZ: Asia/Ho_Chi_Minh
+      
+networks:
+  app-network:
+    name: app-network
+    external: true

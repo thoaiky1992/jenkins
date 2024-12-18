@@ -1,0 +1,63 @@
+pipeline {
+    agent {
+        docker {
+            image 'docker:latest'
+            args '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
+
+    environment {
+        DOCKER_HUB_CREDENTIALS_USER = "thoaiky1992"
+        DOCKER_HUB_CREDENTIALS_PASSWORD = "Ky@776041164"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                script {
+                    // Use SSH agent to manage the SSH key
+                    sshagent(credentials: ['ssh-key-id']) {
+                        // Checkout code from Git using GitSCM
+                        checkout([
+                            $class: 'GitSCM',
+                            branches: [[name: '*/master']],
+                            doGenerateSubmoduleConfigurations: false,
+                            extensions: [],
+                            submoduleCfg: [],
+                            userRemoteConfigs: [[url: 'git@github.com:thoaiky1992/jenkins.git', credentialsId: 'ssh-key-id']]
+                        ])
+                    }
+                }
+            }
+        }
+        stage('Tag and Push') {
+            steps {
+                script {
+                    // Use SSH agent to manage the SSH key
+                    sshagent(credentials: ['ssh-key-id']) {
+                        // Create tag and push to Git
+                        sh 'git tag ${TAG_VERSION}'
+                        sh 'git push origin ${TAG_VERSION}'
+                    }
+                }
+            }
+        }
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    // Build Docker image
+                    sh 'docker build -t thoaiky1992/jenkins-api:${TAG_VERSION} .'
+                }
+            }
+        }
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    // Login to Docker Hub and push Docker image
+                    sh 'echo ${DOCKER_HUB_CREDENTIALS_PASSWORD} | docker login -u ${DOCKER_HUB_CREDENTIALS_USER} --password-stdin'
+                    sh 'docker push thoaiky1992/jenkins-api:${TAG_VERSION}'
+                }
+            }
+        }
+    }
+}

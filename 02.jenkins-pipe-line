@@ -39,9 +39,12 @@ node {
                     echo "Tag ${TAG_VERSION} already exists. Skipping creation."
                 } else {
                     echo "Tag ${TAG_VERSION} does not exist. Creating it."
-                    sh "ssh-add ${SSH_KEY}"
-                    sh "git tag ${TAG_VERSION}"
-                    sh "git push origin ${TAG_VERSION}"
+                    sh '''
+                        eval $(ssh-agent -s)
+                        ssh-add ${SSH_KEY}
+                        git tag ${TAG_VERSION}
+                        git push origin ${TAG_VERSION}
+                    '''
                 }
             }
         }

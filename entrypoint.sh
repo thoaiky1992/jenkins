@@ -1,6 +1,6 @@
 #!/bin/sh
 docker compose up -d
-sudo chmod -R 777 jenkins_home
+chmod -R 777 jenkins_home
 
 docker exec -it --user root jenkins /bin/bash -c "\
   apt-get update -y && \

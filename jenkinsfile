@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_HUB_CREDENTIALS_USER = "thoaiky1992"
-        DOCKER_HUB_CREDENTIALS_PASSWORD = "Ky@776041164"
+        DOCKER_HUB_CREDENTIALS_USER = ""
+        DOCKER_HUB_CREDENTIALS_PASSWORD = ""
     }
 
     stages {

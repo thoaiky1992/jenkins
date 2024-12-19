@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_HUB_CREDENTIALS_USER = credentials('docker-hub-user-id')
-        DOCKER_HUB_CREDENTIALS_PASSWORD = credentials('docker-hub-password-id')
+        DOCKER_HUB_CREDENTIALS_USER = "thoaiky1992"
+        DOCKER_HUB_CREDENTIALS_PASSWORD = "Ky@776041164"
     }
 
     stages {
@@ -11,17 +11,14 @@ pipeline {
             steps {
                 script {
                     // Use SSH agent to manage the SSH key
-                    sshagent(credentials: ['ssh-key-id']) {
-                        // Checkout code from Git using GitSCM
-                        checkout([
-                            $class: 'GitSCM',
-                            branches: [[name: '*/master']],
-                            doGenerateSubmoduleConfigurations: false,
-                            extensions: [],
-                            submoduleCfg: [],
-                            userRemoteConfigs: [[url: 'git@github.com:thoaiky1992/jenkins.git']]
-                        ])
-                    }
+                     checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: '*/master']],
+                        doGenerateSubmoduleConfigurations: false,
+                        extensions: [],
+                        submoduleCfg: [],
+                        userRemoteConfigs: [[url: 'git@github.com:thoaiky1992/jenkins.git', credentialsId: 'ssh-key-id']]
+                    ])
                 }
             }
         }

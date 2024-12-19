@@ -17,7 +17,37 @@ node {
         }
     }
 
-    stage('Build Docker Image') {
+    stage('Push Git Tag') {
+        withCredentials([
+            string(credentialsId: 'github-repo-id', variable: 'GITHUB_REPO'),
+            sshUserPrivateKey(credentialsId: 'ssh-key-id', keyFileVariable: 'SSH_KEY')
+        ]) {
+            script {
+                sh '''
+                    eval $(ssh-agent -s)
+                    ssh-add ${SSH_KEY}
+                    ssh-keyscan -H github.com >> ~/.ssh/known_hosts
+                    git fetch --tags
+                '''
+                
+                def tagExists = sh(
+                    script: "git tag --list | grep -w '${TAG_VERSION}'",
+                    returnStatus: true // Prevent pipeline failure
+                ) == 0
+
+                if (tagExists) {
+                    echo "Tag ${TAG_VERSION} already exists. Skipping creation."
+                } else {
+                    echo "Tag ${TAG_VERSION} does not exist. Creating it."
+                    sh "ssh-add ${SSH_KEY}"
+                    sh "git tag ${TAG_VERSION}"
+                    sh "git push origin ${TAG_VERSION}"
+                }
+            }
+        }
+    }
+
+    stage('Build Image') {
         withCredentials([
             string(credentialsId: 'docker-hub-user-id', variable: 'DOCKER_HUB_USER'),
             string(credentialsId: 'docker-hub-repo-id', variable: 'DOCKER_HUB_REPO')
@@ -26,7 +56,7 @@ node {
         }
     }
 
-    stage('Push Docker Image') {
+    stage('Push Image') {
         withCredentials([
             usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_HUB_USER', passwordVariable: 'DOCKER_HUB_PASSWORD'),
             string(credentialsId: 'docker-hub-repo-id', variable: 'DOCKER_HUB_REPO')

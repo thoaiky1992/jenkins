@@ -1,0 +1,38 @@
+node {
+
+    stage("Version ${TAG_VERSION}") {
+        echo "Building version ${TAG_VERSION}"
+    }
+
+    stage('Checkout') {
+        withCredentials([string(credentialsId: 'github-repo-id', variable: 'GITHUB_REPO')]) {
+            checkout([
+                $class: 'GitSCM',
+                branches: [[name: '*/master']],
+                doGenerateSubmoduleConfigurations: false,
+                extensions: [],
+                submoduleCfg: [],
+                userRemoteConfigs: [[url: "${GITHUB_REPO}", credentialsId: 'ssh-key-id']]
+            ])
+        }
+    }
+
+    stage('Build Docker Image') {
+        withCredentials([
+            string(credentialsId: 'docker-hub-user-id', variable: 'DOCKER_HUB_USER'),
+            string(credentialsId: 'docker-hub-repo-id', variable: 'DOCKER_HUB_REPO')
+        ]) {
+            sh 'docker build -t ${DOCKER_HUB_USER}/${DOCKER_HUB_REPO}:${TAG_VERSION} .'
+        }
+    }
+
+    stage('Push Docker Image') {
+        withCredentials([
+            usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_HUB_USER', passwordVariable: 'DOCKER_HUB_PASSWORD'),
+            string(credentialsId: 'docker-hub-repo-id', variable: 'DOCKER_HUB_REPO')
+        ]) {
+            sh 'echo ${DOCKER_HUB_PASSWORD} | docker login -u ${DOCKER_HUB_USER} --password-stdin'
+            sh 'docker push ${DOCKER_HUB_USER}/${DOCKER_HUB_REPO}:${TAG_VERSION}'
+        }
+    }
+}

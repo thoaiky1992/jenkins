@@ -1,7 +1,10 @@
-#!/bin/bash
+#!/bin/sh
+docker compose up -d
+sudo chmod -R 777 jenkins_home
 
-# Update the package list and install curl if it's not installed
-apt-get update -y && apt-get install -y curl
-
-# Install Docker
-curl -fsSL https://get.docker.com | sh
+docker exec -it --user root jenkins /bin/bash -c "\
+  apt-get update -y && \
+  apt-get install -y curl && \
+  curl -fsSL https://get.docker.com | sh && \
+  usermod -aG docker jenkins && \
+  chmod -R 666 /var/run/docker.sock"

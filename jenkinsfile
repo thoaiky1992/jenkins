@@ -22,18 +22,6 @@ pipeline {
                 }
             }
         }
-        // stage('Tag and Push') {
-        //     steps {
-        //         script {
-        //             // Use SSH agent to manage the SSH key
-        //             sshagent(credentials: ['ssh-key-id']) {
-        //                 // Create tag and push to Git
-        //                 sh 'git tag ${TAG_VERSION}'
-        //                 sh 'git push origin ${TAG_VERSION}'
-        //             }
-        //         }
-        //     }
-        // }
         stage('Build Docker Image') {
             steps {
                 script {

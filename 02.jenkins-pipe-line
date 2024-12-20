@@ -36,7 +36,7 @@ node {
                 ) == 0
 
                 if (tagExists) {
-                    echo "Tag ${TAG_VERSION} already exists. Skipping creation."
+                    error "Tag ${TAG_VERSION} already exists. Skipping creation."
                 } else {
                     echo "Tag ${TAG_VERSION} does not exist. Creating it."
                     sh '''

@@ -6,6 +6,10 @@ node {
 
     stage('Checkout') {
         withCredentials([string(credentialsId: 'github-repo-id', variable: 'GITHUB_REPO')]) {
+            sh '''
+                mkdir -p ~/.ssh
+                ssh-keyscan -t rsa,ecdsa,ed25519 github.com >> ~/.ssh/known_hosts
+            '''
             checkout([
                 $class: 'GitSCM',
                 branches: [[name: '*/master']],
@@ -24,9 +28,9 @@ node {
         ]) {
             script {
                 sh '''
+                    ssh-keyscan -H github.com >> ~/.ssh/known_hosts
                     eval $(ssh-agent -s)
                     ssh-add ${SSH_KEY}
-                    ssh-keyscan -H github.com >> ~/.ssh/known_hosts
                     git fetch --tags
                 '''
                 
@@ -36,7 +40,7 @@ node {
                 ) == 0
 
                 if (tagExists) {
-                    echo "Tag ${TAG_VERSION} already exists. Skipping creation."
+                    error "Tag ${TAG_VERSION} already exists. Skipping creation."
                 } else {
                     echo "Tag ${TAG_VERSION} does not exist. Creating it."
                     sh '''

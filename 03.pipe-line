@@ -1,6 +1,6 @@
 pipeline {
     agent any
-    
+
     stages {
         stage('Main Stage') {
             steps {
@@ -10,14 +10,16 @@ pipeline {
                             echo "Building version ${TAG_VERSION}"
                         },
                         'Checkout': {
-                            checkout([
-                                $class: 'GitSCM',
-                                branches: [[name: '*/master']],
-                                doGenerateSubmoduleConfigurations: false,
-                                extensions: [],
-                                submoduleCfg: [],
-                                userRemoteConfigs: [[url: "${GITHUB_REPO}", credentialsId: 'ssh-key-id']]
-                            ])
+                            withCredentials([string(credentialsId: 'github-repo-id', variable: 'GITHUB_REPO')]) {
+                                checkout([
+                                    $class: 'GitSCM',
+                                    branches: [[name: '*/master']],
+                                    doGenerateSubmoduleConfigurations: false,
+                                    extensions: [],
+                                    submoduleCfg: [],
+                                    userRemoteConfigs: [[url: "${GITHUB_REPO}", credentialsId: 'ssh-key-id']]
+                                ])
+                            }
                         },
                         'Build Docker Image': {
                             withCredentials([

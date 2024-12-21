@@ -10,7 +10,7 @@ app.get("/", (_, res) => {
   res.json({
     message: "Hello KySomaio đẹp trai và kute phô mai que , hehe !!!",
     statusCode: 200,
-    version: "1.0.87",
+    version: "1.0.88",
   });
 });
 

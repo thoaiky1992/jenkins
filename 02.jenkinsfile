@@ -1,121 +1,119 @@
 node {
 
-    stage("Version ${TAG_VERSION}") {
-        echo "Building version ${TAG_VERSION}"
-    }
-
-    stage('Git Pull') {
-        withCredentials([string(credentialsId: 'github-repo-id', variable: 'GITHUB_REPO')]) {
-            sh '''
-                mkdir -p ~/.ssh
-                ssh-keyscan -t rsa,ecdsa,ed25519 github.com >> ~/.ssh/known_hosts
-            '''
-            checkout([
-                $class: 'GitSCM',
-                branches: [[name: '*/master']],
-                doGenerateSubmoduleConfigurations: false,
-                extensions: [],
-                submoduleCfg: [],
-                userRemoteConfigs: [[url: "${GITHUB_REPO}", credentialsId: 'ssh-key-id']]
-            ])
+    try {
+        stage("Version ${TAG_VERSION}") {
+            echo "Building version ${TAG_VERSION}"
         }
-    }
 
-    stage('Git Push Tag') {
-        withCredentials([
-            string(credentialsId: 'github-repo-id', variable: 'GITHUB_REPO'),
-            sshUserPrivateKey(credentialsId: 'ssh-key-id', keyFileVariable: 'SSH_KEY')
-        ]) {
-            script {
+        stage('Git Pull') {
+            withCredentials([string(credentialsId: 'github-repo-id', variable: 'GITHUB_REPO')]) {
                 sh '''
-                    ssh-keyscan -H github.com >> ~/.ssh/known_hosts
-                    eval $(ssh-agent -s)
-                    ssh-add ${SSH_KEY}
-                    git fetch --tags
+                    mkdir -p ~/.ssh
+                    ssh-keyscan -t rsa,ecdsa,ed25519 github.com >> ~/.ssh/known_hosts
                 '''
-                
-                def tagExists = sh(
-                    script: "git tag --list | grep -w '${TAG_VERSION}'",
-                    returnStatus: true // Prevent pipeline failure
-                ) == 0
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/master']],
+                    doGenerateSubmoduleConfigurations: false,
+                    extensions: [],
+                    submoduleCfg: [],
+                    userRemoteConfigs: [[url: "${GITHUB_REPO}", credentialsId: 'ssh-key-id']]
+                ])
+            }
+        }
 
-                if (tagExists) {
-                    error "Tag ${TAG_VERSION} already exists. Skipping creation."
-                } else {
-                    echo "Tag ${TAG_VERSION} does not exist. Creating it."
+        stage('Git Push Tag') {
+            withCredentials([
+                string(credentialsId: 'github-repo-id', variable: 'GITHUB_REPO'),
+                sshUserPrivateKey(credentialsId: 'ssh-key-id', keyFileVariable: 'SSH_KEY')
+            ]) {
+                script {
                     sh '''
+                        ssh-keyscan -H github.com >> ~/.ssh/known_hosts
                         eval $(ssh-agent -s)
                         ssh-add ${SSH_KEY}
-                        git tag ${TAG_VERSION}
-                        git push origin ${TAG_VERSION}
+                        git fetch --tags
+                    '''
+                    
+                    def tagExists = sh(
+                        script: "git tag --list | grep -w '${TAG_VERSION}'",
+                        returnStatus: true // Prevent pipeline failure
+                    ) == 0
+
+                    if (tagExists) {
+                        error "Tag ${TAG_VERSION} already exists. Skipping creation."
+                    } else {
+                        echo "Tag ${TAG_VERSION} does not exist. Creating it."
+                        sh '''
+                            eval $(ssh-agent -s)
+                            ssh-add ${SSH_KEY}
+                            git tag ${TAG_VERSION}
+                            git push origin ${TAG_VERSION}
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Build Image') {
+            withCredentials([
+                string(credentialsId: 'docker-hub-user-id', variable: 'DOCKER_HUB_USER'),
+                string(credentialsId: 'docker-hub-repo-id', variable: 'DOCKER_HUB_REPO')
+            ]) {
+                sh 'docker build -t ${DOCKER_HUB_USER}/${DOCKER_HUB_REPO}:${TAG_VERSION} .'
+            }
+        }
+
+        stage('Push Image') {
+            withCredentials([
+                usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_HUB_USER', passwordVariable: 'DOCKER_HUB_PASSWORD'),
+                string(credentialsId: 'docker-hub-repo-id', variable: 'DOCKER_HUB_REPO')
+            ]) {
+                sh 'echo ${DOCKER_HUB_PASSWORD} | docker login -u ${DOCKER_HUB_USER} --password-stdin'
+                sh 'docker push ${DOCKER_HUB_USER}/${DOCKER_HUB_REPO}:${TAG_VERSION}'
+            }
+        }
+
+        stage('Update ECS Task and Service') {
+            withCredentials([
+                string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
+                string(credentialsId: 'ecs-cluster-name', variable: 'ECS_CLUSTER'),
+                string(credentialsId: 'ecs-service-name', variable: 'ECS_SERVICE'),
+                string(credentialsId: 'ecs-task-definition-name', variable: 'ECS_TASK_DEFINITION'),
+                string(credentialsId: 'docker-hub-repo-id', variable: 'DOCKER_HUB_REPO'),
+                string(credentialsId: 'docker-hub-user-id', variable: 'DOCKER_HUB_USER')
+            ]) {
+                script {
+                    sh '''
+                        export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+                        export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+
+                        TASK_FAMILY=${ECS_TASK_DEFINITION}
+                        IMAGE_URI=${DOCKER_HUB_USER}/${DOCKER_HUB_REPO}:${TAG_VERSION}
+
+                        TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition ${TASK_FAMILY} --region "ap-southeast-1")
+
+                        NEW_TASK_DEFINITION=$(echo $TASK_DEFINITION | jq --arg IMAGE "${IMAGE_URI}" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) |  del(.registeredAt)  | del(.registeredBy)')
+
+                        NEW_TASK_INFO=$(aws ecs register-task-definition --region "ap-southeast-1" --cli-input-json "$NEW_TASK_DEFINITION")
+                        
+                        NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
+                        
+                        aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition ${TASK_FAMILY}:${NEW_REVISION} --force-new-deployment
                     '''
                 }
             }
         }
-    }
-
-    stage('Build Image') {
-        withCredentials([
-            string(credentialsId: 'docker-hub-user-id', variable: 'DOCKER_HUB_USER'),
-            string(credentialsId: 'docker-hub-repo-id', variable: 'DOCKER_HUB_REPO')
-        ]) {
-            sh 'docker build -t ${DOCKER_HUB_USER}/${DOCKER_HUB_REPO}:${TAG_VERSION} .'
+    } catch (Exception e) {
+        currentBuild.result = 'FAILURE'
+        throw e
+    } finally {
+        // Use a scripted approach for the post-processing
+        if (currentBuild.result == 'SUCCESS') {
+            echo 'Build succeeded!'
+        } else {
+            echo 'Build failed!'
         }
     }
-
-    stage('Push Image') {
-        withCredentials([
-            usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_HUB_USER', passwordVariable: 'DOCKER_HUB_PASSWORD'),
-            string(credentialsId: 'docker-hub-repo-id', variable: 'DOCKER_HUB_REPO')
-        ]) {
-            sh 'echo ${DOCKER_HUB_PASSWORD} | docker login -u ${DOCKER_HUB_USER} --password-stdin'
-            sh 'docker push ${DOCKER_HUB_USER}/${DOCKER_HUB_REPO}:${TAG_VERSION}'
-        }
-    }
-
-    stage('Update ECS Task and Service') {
-        withCredentials([
-            string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-            string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
-            string(credentialsId: 'ecs-cluster-name', variable: 'ECS_CLUSTER'),
-            string(credentialsId: 'ecs-service-name', variable: 'ECS_SERVICE'),
-            string(credentialsId: 'ecs-task-definition-name', variable: 'ECS_TASK_DEFINITION'),
-            string(credentialsId: 'docker-hub-repo-id', variable: 'DOCKER_HUB_REPO'),
-            string(credentialsId: 'docker-hub-user-id', variable: 'DOCKER_HUB_USER')
-        ]) {
-            script {
-                sh '''
-                    export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-                    export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-
-                    TASK_FAMILY=${ECS_TASK_DEFINITION}
-                    IMAGE_URI=${DOCKER_HUB_USER}/${DOCKER_HUB_REPO}:${TAG_VERSION}
-
-                    TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition ${TASK_FAMILY} --region "ap-southeast-1")
-
-                    NEW_TASK_DEFINITION=$(echo $TASK_DEFINITION | jq --arg IMAGE "${IMAGE_URI}" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) |  del(.registeredAt)  | del(.registeredBy)')
-
-                    NEW_TASK_INFO=$(aws ecs register-task-definition --region "ap-southeast-1" --cli-input-json "$NEW_TASK_DEFINITION")
-                    
-                    NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
-                    
-                    aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition ${TASK_FAMILY}:${NEW_REVISION} --force-new-deployment
-                '''
-            }
-        }
-    }
-
-    post {
-        success {
-            echo "Pipeline completed successfully."
-        }
-        failure {
-            echo "Pipeline failed. Rolling back changes."
-            // Rollback các thay đổi trên ECS hoặc Docker nếu cần
-        }
-        always {
-            echo "Cleaning up."
-        }
-    }
-
 }

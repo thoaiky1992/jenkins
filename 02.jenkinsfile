@@ -91,38 +91,31 @@ node {
                     TASK_FAMILY=${ECS_TASK_DEFINITION}
                     IMAGE_URI=${DOCKER_HUB_USER}/${DOCKER_HUB_REPO}:${TAG_VERSION}
 
-                    # Get current desired count
-                    DESIRED_COUNT=$(aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE --region "ap-southeast-1" \
-                        | jq -r '.services[0].desiredCount')
-
-                    echo "Current desired count: $DESIRED_COUNT"
-
-                    # Get current task definition
                     TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition ${TASK_FAMILY} --region "ap-southeast-1")
 
-                    # Modify task definition with new image
                     NEW_TASK_DEFINITION=$(echo $TASK_DEFINITION | jq --arg IMAGE "${IMAGE_URI}" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) |  del(.registeredAt)  | del(.registeredBy)')
 
-                    # Register new task definition
                     NEW_TASK_INFO=$(aws ecs register-task-definition --region "ap-southeast-1" --cli-input-json "$NEW_TASK_DEFINITION")
-
-                    # Get new revision
+                    
                     NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
-
-                    # Scale down to 0
-                    aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --desired-count 0 --region "ap-southeast-1"
-
-                    sleep 15
-
-                    # Update service with new task definition
-                    aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition ${TASK_FAMILY}:${NEW_REVISION} --force-new-deployment --region "ap-southeast-1"
-
-                    # Scale back to original desired count
-                    aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --desired-count $DESIRED_COUNT --region "ap-southeast-1"
+                    
+                    aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition ${TASK_FAMILY}:${NEW_REVISION} --force-new-deployment
                 '''
             }
         }
     }
 
+    post {
+        success {
+            echo "Pipeline completed successfully."
+        }
+        failure {
+            echo "Pipeline failed. Rolling back changes."
+            // Rollback các thay đổi trên ECS hoặc Docker nếu cần
+        }
+        always {
+            echo "Cleaning up."
+        }
+    }
 
 }

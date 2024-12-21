@@ -7,7 +7,11 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/", (_, res) => {
-  res.json({ message: "Hello KySomaio đẹp trai và kute phô mai que , hehe !!!", statusCode: 200 });
+  res.json({
+    message: "Hello KySomaio đẹp trai và kute phô mai que , hehe !!!",
+    statusCode: 200,
+    version: "1.0.85",
+  });
 });
 
 app.listen(PORT, () => console.log(`server starting on port ${PORT}`));

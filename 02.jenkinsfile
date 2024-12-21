@@ -111,6 +111,8 @@ node {
                         --service ${ECS_SERVICE} \
                         --task-definition ${NEW_TASK_DEF} \
                         --force-new-deployment
+
+                    aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --force-new-deployment
                 '''
             }
         }

@@ -7,7 +7,7 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/", (_, res) => {
-  res.json({ message: "Hello world !!!" });
+  res.json({ message: "Hello KySomaio !!!" });
 });
 
 app.listen(PORT, () => console.log(`server starting on port ${PORT}`));

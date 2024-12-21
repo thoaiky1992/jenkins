@@ -4,7 +4,7 @@ node {
         echo "Building version ${TAG_VERSION}"
     }
 
-    stage('Checkout') {
+    stage('Git Pull') {
         withCredentials([string(credentialsId: 'github-repo-id', variable: 'GITHUB_REPO')]) {
             sh '''
                 mkdir -p ~/.ssh
@@ -21,7 +21,7 @@ node {
         }
     }
 
-    stage('Push Git Tag') {
+    stage('Git Push Tag') {
         withCredentials([
             string(credentialsId: 'github-repo-id', variable: 'GITHUB_REPO'),
             sshUserPrivateKey(credentialsId: 'ssh-key-id', keyFileVariable: 'SSH_KEY')
@@ -72,4 +72,48 @@ node {
             sh 'docker push ${DOCKER_HUB_USER}/${DOCKER_HUB_REPO}:${TAG_VERSION}'
         }
     }
+
+    stage('Update ECS Task and Service') {
+        withCredentials([
+            string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+            string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
+            string(credentialsId: 'ecs-cluster-name', variable: 'ECS_CLUSTER'),
+            string(credentialsId: 'ecs-service-name', variable: 'ECS_SERVICE'),
+            string(credentialsId: 'ecs-task-definition-name', variable: 'ECS_TASK_DEFINITION'),
+            string(credentialsId: 'docker-hub-repo-id', variable: 'DOCKER_HUB_REPO'),
+            string(credentialsId: 'docker-hub-user-id', variable: 'DOCKER_HUB_USER')
+        ]) {
+            script {
+                sh '''
+                    export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+                    export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+
+                    # Register a new task definition with updated image
+                    TASK_FAMILY=${ECS_TASK_DEFINITION}
+                    IMAGE_URI=${DOCKER_HUB_USER}/${DOCKER_HUB_REPO}:${TAG_VERSION}
+
+                    # Get the current task definition and update container settings
+                    CURRENT_TASK=$(aws ecs describe-task-definition --task-definition ${TASK_FAMILY})
+                    CONTAINER_DEFINITIONS=$(echo $CURRENT_TASK | jq '.taskDefinition.containerDefinitions' | jq '.[0] | .image="'${IMAGE_URI}'" | .memory=512 | .memoryReservation=256')
+
+                    # Register a new task definition
+                    NEW_TASK_DEF=$(aws ecs register-task-definition \
+                        --family ${TASK_FAMILY} \
+                        --container-definitions "[${CONTAINER_DEFINITIONS}]" \
+                        --query 'taskDefinition.taskDefinitionArn' \
+                        --output text)
+
+                    echo "Registered new task definition: $NEW_TASK_DEF"
+
+                    # Update ECS service with the new task definition
+                    aws ecs update-service \
+                        --cluster ${ECS_CLUSTER} \
+                        --service ${ECS_SERVICE} \
+                        --task-definition ${NEW_TASK_DEF} \
+                        --force-new-deployment
+                '''
+            }
+        }
+    }
+
 }

@@ -90,15 +90,23 @@ node {
 
                     # Register a new task definition with updated image
                     TASK_FAMILY=${ECS_TASK_DEFINITION}
+                    echo "${TASK_FAMILY}"
+
                     IMAGE_URI=${DOCKER_HUB_USER}/${DOCKER_HUB_REPO}:${TAG_VERSION}
+                    echo "${IMAGE_URI}"
+
 
                     TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition ${TASK_FAMILY} --region "ap-southeast-1")
+                    echo "${TASK_DEFINITION}"
 
                     NEW_TASK_DEFINITION=$(echo $TASK_DEFINITION | jq --arg IMAGE "${IMAGE_URI}" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) |  del(.registeredAt)  | del(.registeredBy)')
-                    
+                    echo "${NEW_TASK_DEFINITION}"
+
                     NEW_TASK_INFO=$(aws ecs register-task-definition --region "ap-southeast-1" --cli-input-json "$NEW_TASK_DEFINITION")
+                    echo "${NEW_TASK_INFO}"
                     
                     NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
+                    echo "${NEW_REVISION}"
                     
                     aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition ${TASK_FAMILY}:${NEW_REVISION} --force-new-deployment
                 '''

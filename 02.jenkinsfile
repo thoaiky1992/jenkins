@@ -92,27 +92,13 @@ node {
                     TASK_FAMILY=${ECS_TASK_DEFINITION}
                     IMAGE_URI=${DOCKER_HUB_USER}/${DOCKER_HUB_REPO}:${TAG_VERSION}
 
-                    # Get the current task definition and update container settings
-                    CURRENT_TASK=$(aws ecs describe-task-definition --task-definition ${TASK_FAMILY})
-                    CONTAINER_DEFINITIONS=$(echo $CURRENT_TASK | jq '.taskDefinition.containerDefinitions' | jq '.[0] | .image="'${IMAGE_URI}'" | .memory=512 | .memoryReservation=256')
-
-                    # Register a new task definition
-                    NEW_TASK_DEF=$(aws ecs register-task-definition \
-                        --family ${TASK_FAMILY} \
-                        --container-definitions "[${CONTAINER_DEFINITIONS}]" \
-                        --query 'taskDefinition.taskDefinitionArn' \
-                        --output text)
-
-                    echo "Registered new task definition: $NEW_TASK_DEF"
-
-                    # Update ECS service with the new task definition
-                    aws ecs update-service \
-                        --cluster ${ECS_CLUSTER} \
-                        --service ${ECS_SERVICE} \
-                        --task-definition ${NEW_TASK_DEF} \
-                        --force-new-deployment
-
-                    aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --force-new-deployment
+                    TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition ${TASK_FAMILY} --region "ap-southeast-1")
+                    NEW_TASK_DEFINITION=$(echo $TASK_DEFINITION | jq --arg IMAGE "${IMAGE_URI}" \
+                    --arg CPU "256" --arg MEMORY "512" \
+                    '.taskDefinition | .containerDefinitions[0].image = $IMAGE | .containerDefinitions[0].cpu = ($CPU | tonumber) | .containerDefinitions[0].memory = ($MEMORY | tonumber) | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) |  del(.registeredAt)  | del(.registeredBy)')
+                    NEW_TASK_INFO=$(aws ecs register-task-definition --region "ap-southeast-1" --cli-input-json "$NEW_TASK_DEFINITION")
+                    NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
+                    aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition ${TASK_FAMILY}:${NEW_REVISION} --force-new-deployment
                 '''
             }
         }
